@@ -188,3 +188,41 @@ def maximal_independent_set_in_subgraph(G: nx.Graph, candidates: set) -> set:
             independent.add(v)
             blocked.update(G.neighbors(v))
     return independent
+
+
+def independent_set_by_edge_deletion(
+    G: nx.Graph, candidates: set, proj_values: dict
+) -> set:
+    """
+    Construct an independent set from candidates by edge-endpoint deletion.
+
+    This matches the paper's analysis in Lemma 7.2 (Section 7): for every
+    edge (u, v) within the induced subgraph G[candidates], delete the
+    endpoint with the *lower* projection value.  The surviving vertices
+    form an independent set.
+
+    Args:
+        G:           The full graph.
+        candidates:  Subset of vertices (the threshold set S).
+        proj_values: Mapping vertex → projection scalar (v_i · r).
+
+    Returns:
+        A set of vertices forming an independent set within G[candidates].
+    """
+    removed = set()
+
+    # Examine every edge within the candidate set
+    for u in candidates:
+        if u in removed:
+            continue
+        for v in G.neighbors(u):
+            if v not in candidates or v in removed:
+                continue
+            # Both u and v are in candidates — remove the one with lower proj
+            if proj_values.get(u, 0) < proj_values.get(v, 0):
+                removed.add(u)
+                break  # u removed, no need to check more of its edges
+            else:
+                removed.add(v)
+
+    return candidates - removed

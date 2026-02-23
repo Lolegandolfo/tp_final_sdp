@@ -38,15 +38,30 @@ def _choose_t(G: nx.Graph, k_hint: int = 3) -> int:
     """
     Choose the number of random hyperplanes t.
 
-    From the paper: t = ⌈log_{k/(k-1)}(n)⌉.
-    For k=3: t = ⌈log_{1.5}(n)⌉ = ⌈ln(n)/ln(1.5)⌉.
-    In practice a small t (6–20) already works well.
+    From the paper (Section 6, proof of Theorem 6.2):
+      t = ⌈log₂(k)⌉ + 2·⌈log₂(log₂(Δ))⌉
+
+    where k is the vector chromatic number hint and Δ is the maximum degree.
+    For very small Δ (≤ 4) we fall back to ⌈ln(n)/ln(k/(k-1))⌉.
     """
     n = G.number_of_nodes()
     if n <= 1:
         return 1
-    base = k_hint / (k_hint - 1)          # e.g. 1.5 for k=3
-    t = math.ceil(math.log(n) / math.log(base))
+
+    max_deg = max(dict(G.degree()).values()) if G.number_of_edges() > 0 else 1
+    max_deg = max(max_deg, 2)
+
+    if max_deg > 4:
+        # Paper formula: t = ceil(log2(k)) + 2*ceil(log2(log2(Δ)))
+        log2_k = math.ceil(math.log2(max(k_hint, 2)))
+        log2_delta = math.log2(max_deg)
+        log2_log2_delta = math.ceil(math.log2(max(log2_delta, 1)))
+        t = log2_k + 2 * log2_log2_delta
+    else:
+        # Fallback for very sparse graphs
+        base = k_hint / (k_hint - 1)    # e.g. 1.5 for k=3
+        t = math.ceil(math.log(n) / math.log(base))
+
     return max(t, 1)
 
 

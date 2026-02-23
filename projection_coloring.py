@@ -10,16 +10,17 @@ Algorithm (for k-colorable G, typically k=3)
 --------------------------------------------
 Repeat until all vertices are colored:
 
-  1. Sample a random Gaussian vector r ~ N(0, I_n).
+  1. Sample a random Gaussian vector r ~ N(0, I_n) (NOT normalised).
   2. Project each uncolored vertex i onto r:  x_i = v_i · r.
-  3. Compute threshold  c = sqrt(2 ln Δ),  where Δ is the max degree
-     in the *remaining* subgraph.
+  3. Compute threshold  c = sqrt(2 ln(Δ/k)),  where Δ is the max degree
+     in the *remaining* subgraph and k is the vector chromatic number hint.
   4. Let S = { i : x_i ≥ c }.  Vertices in S tend to have large
      positive projections, meaning their vectors point "in the direction
      of r", which geometrically means they are clustered together —
      but edge constraints (v_i · v_j ≤ −1/(k−1) < 0) ensure neighbors
      are *not* in S simultaneously (with high probability for large Δ).
-  5. Find a maximal independent set I ⊆ S in the subgraph G[S].
+  5. Construct an independent set I ⊆ S by deleting one endpoint from
+     every edge within G[S]  (as per Lemma 7.2 in the paper).
   6. Assign a fresh color to I and remove I from the remaining graph.
 
 Approximation guarantee (Thm 7.3):
@@ -33,13 +34,14 @@ import random
 import numpy as np
 import networkx as nx
 
-from graph_utils import maximal_independent_set_in_subgraph
+from graph_utils import independent_set_by_edge_deletion
 
 
 def projection_coloring(
     G: nx.Graph,
     vectors: np.ndarray,
     nodes: list,
+    k_hint: int = 3,
     seed: int = None,
     max_rounds: int = None,
     verbose: bool = False,
@@ -49,8 +51,9 @@ def projection_coloring(
 
     Args:
         G:          Original NetworkX graph.
-        vectors:    ndarray shape (n, n) — row i is the unit vector for nodes[i].
+        vectors:    ndarray shape (n, d) — row i is the unit vector for nodes[i].
         nodes:      Ordered list of nodes corresponding to vector rows.
+        k_hint:     Vector chromatic number hint (default 3, used in threshold).
         seed:       Random seed for reproducibility.
         max_rounds: Safety limit on the number of coloring rounds (default: 10*n).
         verbose:    Print progress information.
@@ -78,17 +81,19 @@ def projection_coloring(
         remaining_nodes = list(remaining.nodes())
         n_rem = len(remaining_nodes)
 
-        # Threshold c = sqrt(2 ln Δ);  Δ = max degree in remaining subgraph
+        # Threshold c = sqrt(2 ln(Δ / k));  Δ = max degree in remaining subgraph
+        # (Lemma 7.2 / Theorem 7.3 in the paper)
         degrees = dict(remaining.degree())
         max_deg = max(degrees.values()) if degrees else 1
         max_deg = max(max_deg, 1)                      # avoid log(0)
 
-        c = math.sqrt(2.0 * math.log(max_deg + 1))    # +1 for isolated vertices
+        ratio = max(max_deg / max(k_hint, 1), math.e)  # ensure ratio ≥ e (c > 0)
+        c = math.sqrt(2.0 * math.log(ratio))
 
         # ---- Step 1-2: random projection ------------------------------------
+        # r ~ N(0, I_n) — NOT normalised (paper Section 7)
         dim = vectors.shape[1]
         r = rng.standard_normal(dim)
-        r /= np.linalg.norm(r)
 
         # Projections for uncolored vertices
         proj = {}
@@ -113,8 +118,10 @@ def projection_coloring(
                 f"Δ={max_deg:3d} | c={c:.3f} | |S|={len(S):4d}"
             )
 
-        # ---- Step 5: maximal independent set in G[S] -----------------------
-        ind_set = maximal_independent_set_in_subgraph(remaining, S)
+        # ---- Step 5: independent set via edge-endpoint deletion (Lemma 7.2) -
+        # For every edge (u,v) in G[S], delete one endpoint (the one with
+        # *lower* projection, keeping the more "aligned" vertices).
+        ind_set = independent_set_by_edge_deletion(remaining, S, proj)
 
         # ---- Step 6: color and remove --------------------------------------
         for v in ind_set:
